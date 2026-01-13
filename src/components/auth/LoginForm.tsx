@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Mail, Lock, AlertCircle } from "lucide-react";
 import { z } from "zod";
@@ -17,6 +18,7 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 const LoginForm = () => {
+  const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -35,6 +37,7 @@ const LoginForm = () => {
     console.log("Login attempt:", data);
     await new Promise(resolve => setTimeout(resolve, 1500));
     setIsLoading(false);
+    navigate("/dashboard");
   };
 
   const handleGoogleLogin = async () => {
@@ -43,6 +46,7 @@ const LoginForm = () => {
     console.log("Google login initiated");
     await new Promise(resolve => setTimeout(resolve, 1500));
     setIsGoogleLoading(false);
+    navigate("/dashboard");
   };
 
   const containerVariants = {
