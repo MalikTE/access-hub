@@ -4,6 +4,7 @@ import { VaultHeader } from '@/components/vault/VaultHeader';
 import { PasswordCard } from '@/components/vault/PasswordCard';
 import { AddPasswordModal } from '@/components/vault/AddPasswordModal';
 import { EmptyState } from '@/components/vault/EmptyState';
+import { FilterBar } from '@/components/vault/FilterBar';
 import { PasswordEntry } from '@/types/password';
 import { toast } from 'sonner';
 import {
@@ -56,26 +57,81 @@ const samplePasswords: PasswordEntry[] = [
     createdAt: new Date(),
     updatedAt: new Date(),
   },
+  {
+    id: '4',
+    siteId: 'spotify',
+    siteName: 'Spotify',
+    siteIcon: 'https://open.spotifycdn.com/cdn/images/favicon32.b64ecc03.png',
+    siteColor: '#1DB954',
+    username: 'johndoe_music',
+    email: 'john@work.com',
+    password: 'SpotifyPass123!',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  {
+    id: '5',
+    siteId: 'discord',
+    siteName: 'Discord',
+    siteIcon: 'https://discord.com/assets/favicon.ico',
+    siteColor: '#5865F2',
+    username: 'JohnD#1234',
+    email: 'john@work.com',
+    password: 'DiscordSecure456!',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
 ];
 
 export default function Dashboard() {
   const [passwords, setPasswords] = useState<PasswordEntry[]>(samplePasswords);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedWebsites, setSelectedWebsites] = useState<string[]>([]);
+  const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editEntry, setEditEntry] = useState<PasswordEntry | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  // Extract unique websites and emails for filters
+  const uniqueWebsites = useMemo(() => {
+    return [...new Set(passwords.map((p) => p.siteName))].sort();
+  }, [passwords]);
+
+  const uniqueEmails = useMemo(() => {
+    return [...new Set(passwords.map((p) => p.email).filter(Boolean))].sort();
+  }, [passwords]);
+
   const filteredPasswords = useMemo(() => {
-    if (!searchQuery.trim()) return passwords;
-    
-    const query = searchQuery.toLowerCase();
-    return passwords.filter(
-      (entry) =>
-        entry.siteName.toLowerCase().includes(query) ||
-        entry.username.toLowerCase().includes(query) ||
-        entry.email.toLowerCase().includes(query)
-    );
-  }, [passwords, searchQuery]);
+    let result = passwords;
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(
+        (entry) =>
+          entry.siteName.toLowerCase().includes(query) ||
+          entry.username.toLowerCase().includes(query) ||
+          entry.email.toLowerCase().includes(query)
+      );
+    }
+
+    // Apply website filter
+    if (selectedWebsites.length > 0) {
+      result = result.filter((entry) => selectedWebsites.includes(entry.siteName));
+    }
+
+    // Apply email filter
+    if (selectedEmails.length > 0) {
+      result = result.filter((entry) => selectedEmails.includes(entry.email));
+    }
+
+    return result;
+  }, [passwords, searchQuery, selectedWebsites, selectedEmails]);
+
+  const handleClearFilters = () => {
+    setSelectedWebsites([]);
+    setSelectedEmails([]);
+  };
 
   const handleAddPassword = (data: Omit<PasswordEntry, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (editEntry) {
@@ -140,6 +196,19 @@ export default function Dashboard() {
       />
 
       <main className="container mx-auto px-4 py-6 relative z-10">
+        {/* Filter Bar */}
+        {passwords.length > 0 && (
+          <FilterBar
+            websites={uniqueWebsites}
+            emails={uniqueEmails}
+            selectedWebsites={selectedWebsites}
+            selectedEmails={selectedEmails}
+            onWebsiteChange={setSelectedWebsites}
+            onEmailChange={setSelectedEmails}
+            onClearFilters={handleClearFilters}
+          />
+        )}
+
         {passwords.length === 0 ? (
           <EmptyState onAddClick={() => setIsModalOpen(true)} />
         ) : filteredPasswords.length === 0 ? (
@@ -148,7 +217,7 @@ export default function Dashboard() {
             animate={{ opacity: 1 }}
             className="text-center py-20"
           >
-            <p className="text-muted-foreground">No passwords match your search.</p>
+            <p className="text-muted-foreground">No passwords match your filters.</p>
           </motion.div>
         ) : (
           <motion.div
