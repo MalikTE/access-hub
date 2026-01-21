@@ -1,25 +1,88 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Eye, EyeOff, Copy, Edit2, Trash2, Globe } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PasswordEntry } from '@/types/password';
-import { toast } from 'sonner';
+import { useState } from "react"
+import { motion } from "framer-motion"
+import {
+  Eye,
+  EyeOff,
+  Copy,
+  Edit2,
+  Trash2,
+  Clock,
+  Globe,
+  Mail,
+  User,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { PasswordEntry } from "@/components/auth/password"
+import { toast } from "sonner"
+import { Timestamp } from "firebase/firestore"
 
 interface PasswordCardProps {
-  entry: PasswordEntry;
-  onEdit: (entry: PasswordEntry) => void;
-  onDelete: (id: string) => void;
+  entry: PasswordEntry
+  onEdit: (entry: PasswordEntry) => void
+  onDelete: (id: string) => void
+  onRollback: (passwordId: string, oldPassword: string) => void
 }
 
-export function PasswordCard({ entry, onEdit, onDelete }: PasswordCardProps) {
-  const [showPassword, setShowPassword] = useState(false);
+interface Props {
+  entry: PasswordEntry
+}
+
+/* ================================
+   SAFE DATE PARSER
+================================ */
+const toDateSafe = (value: any): Date => {
+  if (!value) return new Date()
+
+  if (value instanceof Timestamp) {
+    return value.toDate()
+  }
+
+  if (typeof value === "string") {
+    return new Date(value)
+  }
+
+  if (value.seconds) {
+    return new Date(value.seconds * 1000)
+  }
+
+  return new Date()
+}
+
+export function PasswordCard({
+  entry,
+  onEdit,
+  onDelete,
+  onRollback,
+}: PasswordCardProps) {
+  const [showPassword, setShowPassword] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
 
   const copyToClipboard = async (text: string, label: string) => {
-    await navigator.clipboard.writeText(text);
-    toast.success(`${label} copied to clipboard`);
-  };
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success(`${label} copied`)
+    } catch {
+      toast.error("Copy failed")
+    }
+  }
 
-  const maskedPassword = '•'.repeat(Math.min(entry.password.length, 12));
+  const maskedPassword =
+    typeof entry.password === "string"
+      ? "•".repeat(Math.min(entry.password.length, 12))
+      : "••••••••"
+
+  const lastChanged = entry.history?.length
+    ? (() => {
+        const last =
+          entry.history[entry.history.length - 1]
+        const date = toDateSafe(last.updatedAt)
+        const days = Math.floor(
+          (Date.now() - date.getTime()) /
+            (1000 * 60 * 60 * 24)
+        )
+        return `Last changed ${days} days ago`
+      })()
+    : "Never changed"
 
   return (
     <motion.div
@@ -29,51 +92,39 @@ export function PasswordCard({ entry, onEdit, onDelete }: PasswordCardProps) {
       whileHover={{ scale: 1.02 }}
       className="glass-card p-4 md:p-5 rounded-xl border border-white/10 hover:border-primary/30 transition-all duration-300 group"
     >
-      {/* Header with icon and site name */}
+      {/* Header */}
       <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div 
-            className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden"
-            style={{ backgroundColor: `${entry.siteColor}20` }}
-          >
-            {entry.siteIcon ? (
-              <img 
-                src={entry.siteIcon} 
-                alt={entry.siteName}
-                className="w-7 h-7 object-contain"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                  (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                }}
-              />
-            ) : null}
-            <Globe 
-              className={`w-6 h-6 text-primary ${entry.siteIcon ? 'hidden' : ''}`}
-              style={{ color: entry.siteColor }}
-            />
-          </div>
-          <div>
-            <h3 className="font-semibold text-foreground text-lg">{entry.siteName}</h3>
-            {entry.customUrl && (
-              <p className="text-xs text-muted-foreground truncate max-w-[150px]">{entry.customUrl}</p>
-            )}
-          </div>
+        <div className="min-w-0">
+        <h3
+  className="text-lg font-semibold text-primary hover:underline cursor-pointer"
+  onClick={() => {
+    if (entry.siteUrl) {
+      window.open(entry.siteUrl, "_blank", "noopener,noreferrer")
+    }
+  }}
+>
+  {entry.siteName}
+</h3>
+
+
+          {entry.customUrl && (
+            <p className="text-xs text-muted-foreground truncate max-w-[220px] flex items-center gap-1">
+              <Globe className="w-3 h-3 shrink-0" />
+              <span className="truncate">
+                {entry.customUrl}
+              </span>
+            </p>
+          )}
         </div>
-        
-        {/* Action buttons */}
+
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-primary"
-            onClick={() => onEdit(entry)}
-          >
+          <Button variant="ghost" size="icon" onClick={() => onEdit(entry)}>
             <Edit2 className="h-4 w-4" />
           </Button>
+
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-destructive"
             onClick={() => onDelete(entry.id)}
           >
             <Trash2 className="h-4 w-4" />
@@ -81,72 +132,146 @@ export function PasswordCard({ entry, onEdit, onDelete }: PasswordCardProps) {
         </div>
       </div>
 
-      {/* Credentials */}
-      <div className="space-y-3">
-        {/* Username */}
-        {entry.username && (
-          <div className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2">
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-muted-foreground mb-0.5">Username</p>
-              <p className="text-sm text-foreground truncate">{entry.username}</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-primary shrink-0"
-              onClick={() => copyToClipboard(entry.username, 'Username')}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
+      {/* Username */}
+      {entry.username && (
+        <div className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2 mb-2">
+          <div className="flex items-center gap-2 text-sm text-foreground break-all">
+            <User className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span>{entry.username}</span>
           </div>
-        )}
 
-        {/* Email */}
-        {entry.email && (
-          <div className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2">
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-muted-foreground mb-0.5">Email</p>
-              <p className="text-sm text-foreground truncate">{entry.email}</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-primary shrink-0"
-              onClick={() => copyToClipboard(entry.email, 'Email')}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() =>
+              copyToClipboard(entry.username, "Username")
+            }
+          >
+            <Copy className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
 
-        {/* Password */}
-        <div className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-muted-foreground mb-0.5">Password</p>
-            <p className="text-sm text-foreground font-mono">
-              {showPassword ? entry.password : maskedPassword}
-            </p>
+      {/* Email */}
+      {entry.email !== undefined  && (
+        <div className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2 mb-2">
+          <div className="flex items-center gap-2 text-sm text-foreground break-all">
+            <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span>{entry.email}</span>
           </div>
-          <div className="flex gap-1 shrink-0">
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() =>
+              copyToClipboard(entry.email!, "Email")
+            }
+          >
+            <Copy className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
+      {/* Password */}
+      <div className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-muted-foreground mb-0.5">
+            Password
+          </p>
+
+          <p className="text-sm text-foreground font-mono break-all">
+            {showPassword
+              ? entry.password
+              : maskedPassword}
+          </p>
+
+          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+            <Clock className="w-3 h-3 shrink-0" />
+            {lastChanged}
+          </p>
+        </div>
+
+        <div className="flex gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() =>
+              setShowPassword((p) => !p)
+            }
+          >
+            {showPassword ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() =>
+              copyToClipboard(
+                entry.password,
+                "Password"
+              )
+            }
+          >
+            <Copy className="h-4 w-4" />
+          </Button>
+
+          {entry.history?.length > 0 && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-primary"
-              onClick={() => setShowPassword(!showPassword)}
+              onClick={() =>
+                setShowHistory((p) => !p)
+              }
             >
-              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              <Clock className="h-4 w-4" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-primary"
-              onClick={() => copyToClipboard(entry.password, 'Password')}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-          </div>
+          )}
         </div>
       </div>
+
+      {/* History */}
+      {showHistory && entry.history?.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={{ opacity: 0, height: 0 }}
+          className="bg-background/30 p-2 rounded-lg mt-2 space-y-1"
+        >
+          {entry.history
+            .slice()
+            .reverse()
+            .map((h, idx) => {
+              const date = toDateSafe(h.updatedAt)
+
+              return (
+                <div
+                  key={idx}
+                  className="flex justify-between items-center px-2 py-1 rounded hover:bg-white/10 cursor-pointer"
+                  onClick={() =>
+                    onRollback(
+                      entry.id,
+                      h.password
+                    )
+                  }
+                >
+                  <span className="text-xs text-foreground font-mono break-all">
+                    {h.password.length > 12
+                      ? h.password.slice(0, 12) + "…"
+                      : h.password}
+                  </span>
+
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {date.toLocaleDateString()}
+                  </span>
+                </div>
+              )
+            })}
+        </motion.div>
+      )}
     </motion.div>
-  );
+  )
 }

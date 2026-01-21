@@ -1,12 +1,30 @@
-import { useState, useMemo } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { VaultHeader } from '@/components/vault/VaultHeader';
-import { PasswordCard } from '@/components/vault/PasswordCard';
-import { AddPasswordModal } from '@/components/vault/AddPasswordModal';
-import { EmptyState } from '@/components/vault/EmptyState';
-import { FilterBar } from '@/components/vault/FilterBar';
-import { PasswordEntry } from '@/types/password';
-import { toast } from 'sonner';
+import { useEffect, useMemo, useState } from "react"
+import { AnimatePresence, motion } from "framer-motion"
+import { useNavigate } from "react-router-dom"
+import { signOut, onAuthStateChanged } from "firebase/auth"
+import { LogOut } from "lucide-react"
+import { Timestamp } from "firebase/firestore"
+
+import { VaultHeader } from "@/components/vault/VaultHeader"
+import { PasswordCard } from "@/components/vault/PasswordCard"
+import { AddPasswordModal } from "@/components/vault/AddPasswordModal"
+import { EmptyState } from "@/components/vault/EmptyState"
+import { FilterBar } from "@/components/vault/FilterBar"
+
+import { PasswordEntry } from "@/types/password"
+import { toast } from "sonner"
+import { auth } from "@/firebase"
+
+import { decryptPassword, encryptPassword } from "@/utils/crypto"
+
+import {
+  addPassword,
+  getPasswords,
+  deletePassword,
+  editPassword,
+} from "@/components/auth/password"
+
+import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,178 +34,238 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog"
 
-// Sample data for demo
-const samplePasswords: PasswordEntry[] = [
-  {
-    id: '1',
-    siteId: 'google',
-    siteName: 'Google',
-    siteIcon: 'https://www.google.com/favicon.ico',
-    siteColor: '#4285F4',
-    username: 'john.doe',
-    email: 'john.doe@gmail.com',
-    password: 'MySecurePassword123!',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-  {
-    id: '2',
-    siteId: 'github',
-    siteName: 'GitHub',
-    siteIcon: 'https://github.githubassets.com/favicons/favicon.svg',
-    siteColor: '#181717',
-    username: 'johndoe',
-    email: 'john.doe@gmail.com',
-    password: 'GitHubPass456!',
-    customUrl: 'https://github.com',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-  {
-    id: '3',
-    siteId: 'netflix',
-    siteName: 'Netflix',
-    siteIcon: 'https://assets.nflxext.com/us/ffe/siteui/common/icons/nficon2016.ico',
-    siteColor: '#E50914',
-    username: '',
-    email: 'john.doe@gmail.com',
-    password: 'NetflixSecure789!',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-  {
-    id: '4',
-    siteId: 'spotify',
-    siteName: 'Spotify',
-    siteIcon: 'https://open.spotifycdn.com/cdn/images/favicon32.b64ecc03.png',
-    siteColor: '#1DB954',
-    username: 'johndoe_music',
-    email: 'john@work.com',
-    password: 'SpotifyPass123!',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-  {
-    id: '5',
-    siteId: 'discord',
-    siteName: 'Discord',
-    siteIcon: 'https://discord.com/assets/favicon.ico',
-    siteColor: '#5865F2',
-    username: 'JohnD#1234',
-    email: 'john@work.com',
-    password: 'DiscordSecure456!',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-];
+/* 🔐 Safe decrypt */
+const safeDecrypt = (value: string) => {
+  try {
+    return decryptPassword(value)
+  } catch {
+    return "••••••"
+  }
+}
 
 export default function Dashboard() {
-  const [passwords, setPasswords] = useState<PasswordEntry[]>(samplePasswords);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedWebsites, setSelectedWebsites] = useState<string[]>([]);
-  const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editEntry, setEditEntry] = useState<PasswordEntry | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const navigate = useNavigate()
 
-  // Extract unique websites and emails for filters
-  const uniqueWebsites = useMemo(() => {
-    return [...new Set(passwords.map((p) => p.siteName))].sort();
-  }, [passwords]);
+  const [passwords, setPasswords] = useState<PasswordEntry[]>([])
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedWebsites, setSelectedWebsites] = useState<string[]>([])
+  const [selectedEmails, setSelectedEmails] = useState<string[]>([])
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [editEntry, setEditEntry] = useState<PasswordEntry | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const uniqueEmails = useMemo(() => {
-    return [...new Set(passwords.map((p) => p.email).filter(Boolean))].sort();
-  }, [passwords]);
+  /* 🔒 Protect route */
+  useEffect(() => {
+  const unsub = onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      navigate("/", { replace: true })
+      return
+    }
+
+    await loadPasswords()
+  })
+
+  return () => unsub()
+}, [navigate])
+
+
+  /* 📥 Load */
+ const loadPasswords = async() => {
+  setLoading(true)
+
+  try {
+    if (!auth.currentUser) return
+
+    const data = await getPasswords(auth.currentUser.uid)
+
+    const formatted: PasswordEntry[] = data.map((item: any) => ({
+      id: item.id,
+      siteName: item.siteName || "Unknown",
+siteUrl: item.siteUrl || "",
+
+      username: item.username || "",
+      email: item.email || "",
+      password: safeDecrypt(item.password),
+      history:
+        item.history?.map((h: any) => ({
+          password: safeDecrypt(h.password),
+          updatedAt: h.updatedAt?.toDate?.() || new Date(),
+        })) || [],
+      createdAt: item.createdAt?.toDate?.() || new Date(),
+      updatedAt: item.updatedAt?.toDate?.() || new Date(),
+    }))
+
+    setPasswords(formatted)
+  } catch (err) {
+    console.error("LOAD ERROR:", err)
+    toast.error("Failed to load passwords")
+  } finally {
+    setLoading(false) // ALWAYS STOP LOADING
+  }
+}
+
+
+
+  /* 🚪 Sign out */
+  const handleSignOut = async() => {
+    try {
+      await signOut(auth)
+      navigate("/", { replace: true })
+    } catch {
+      toast.error("Sign out failed")
+    }
+  }
+
+  /* 🔍 Filters */
+  const uniqueWebsites = useMemo(
+    () => [...new Set(passwords.map((p) => p.siteName))].sort(),
+    [passwords]
+  )
+
+  const uniqueEmails = useMemo(
+    () => [...new Set(passwords.map((p) => p.email).filter(Boolean))].sort(),
+    [passwords]
+  )
 
   const filteredPasswords = useMemo(() => {
-    let result = passwords;
+    let result = passwords
+    const q = searchQuery.toLowerCase()
 
-    // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+    if (q) {
       result = result.filter(
-        (entry) =>
-          entry.siteName.toLowerCase().includes(query) ||
-          entry.username.toLowerCase().includes(query) ||
-          entry.email.toLowerCase().includes(query)
-      );
+        (p) =>
+          p.siteName.toLowerCase().includes(q) ||
+          p.username.toLowerCase().includes(q) ||
+          p.email?.toLowerCase().includes(q)
+      )
     }
 
-    // Apply website filter
-    if (selectedWebsites.length > 0) {
-      result = result.filter((entry) => selectedWebsites.includes(entry.siteName));
+    if (selectedWebsites.length) {
+      result = result.filter((p) =>
+        selectedWebsites.includes(p.siteName)
+      )
     }
 
-    // Apply email filter
-    if (selectedEmails.length > 0) {
-      result = result.filter((entry) => selectedEmails.includes(entry.email));
+    if (selectedEmails.length) {
+      result = result.filter((p) =>
+        selectedEmails.includes(p.email || "")
+      )
     }
 
-    return result;
-  }, [passwords, searchQuery, selectedWebsites, selectedEmails]);
+    return result
+  }, [passwords, searchQuery, selectedWebsites, selectedEmails])
 
-  const handleClearFilters = () => {
-    setSelectedWebsites([]);
-    setSelectedEmails([]);
-  };
+  /* 💾 Save */
+ const handleSavePassword = async(
+  data: Omit<PasswordEntry, "id" | "createdAt" | "updatedAt" | "history">
+) => {
+  if (!auth.currentUser) return
 
-  const handleAddPassword = (data: Omit<PasswordEntry, 'id' | 'createdAt' | 'updatedAt'>) => {
+  try {
+    const encrypted = encryptPassword(data.password)
+
     if (editEntry) {
-      // Update existing
-      setPasswords((prev) =>
-        prev.map((p) =>
-          p.id === editEntry.id
-            ? { ...p, ...data, updatedAt: new Date() }
-            : p
-        )
-      );
-      toast.success('Password updated successfully');
+      const oldEntry = passwords.find((p) => p.id === editEntry.id)
+
+      const encryptedHistory =
+        oldEntry?.history.map((h) => ({
+          password: encryptPassword(h.password),
+          updatedAt: Timestamp.fromDate(new Date(h.updatedAt)),
+        })) || []
+
+      if (oldEntry?.password) {
+        encryptedHistory.push({
+          password: encryptPassword(oldEntry.password),
+          updatedAt: Timestamp.now(),
+        })
+      }
+
+      await editPassword(auth.currentUser.uid, editEntry.id, {
+        siteName: data.siteName,
+        siteUrl: data.siteUrl || "", 
+        username: data.username,
+        email: data.email || "",
+        password: encrypted,
+        history: encryptedHistory,
+      })
+
+      toast.success("Password updated")
     } else {
-      // Add new
-      const newEntry: PasswordEntry = {
-        ...data,
-        id: crypto.randomUUID(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      setPasswords((prev) => [newEntry, ...prev]);
-      toast.success('Password added successfully');
+      await addPassword(auth.currentUser.uid, {
+  siteName: data.siteName,
+  siteUrl: data.siteUrl,
+  username: data.username,
+  email: data.email,
+  password: encrypted,
+})
+
+
+      toast.success("Password added")
     }
-    setEditEntry(null);
-  };
 
-  const handleEdit = (entry: PasswordEntry) => {
-    setEditEntry(entry);
-    setIsModalOpen(true);
-  };
+    await loadPasswords()
+    setIsModalOpen(false)
+    setEditEntry(null)
+  } catch (err) {
+    console.error("SAVE ERROR:", err)
+    toast.error("Failed to save password")
+  }
+}
 
-  const handleDelete = (id: string) => {
-    setDeleteId(id);
-  };
 
-  const confirmDelete = () => {
-    if (deleteId) {
-      setPasswords((prev) => prev.filter((p) => p.id !== deleteId));
-      toast.success('Password deleted');
-      setDeleteId(null);
+  /* 🗑 Delete */
+  const confirmDelete = async() => {
+    if (!deleteId || !auth.currentUser) return
+
+    try {
+      await deletePassword(auth.currentUser.uid, deleteId)
+      setPasswords((prev) => prev.filter((p) => p.id !== deleteId))
+      toast.success("Password deleted")
+    } catch {
+      toast.error("Delete failed")
+    } finally {
+      setDeleteId(null)
     }
-  };
+  }
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setEditEntry(null);
-  };
+  /* 🔁 Rollback */
+  const handleRollback = async(passwordId: string, oldPassword: string) => {
+    if (!auth.currentUser) return
+
+    try {
+      const entry = passwords.find((p) => p.id === passwordId)
+      if (!entry) return
+
+      const encryptedHistory =
+        entry.history.map((h) => ({
+          password: encryptPassword(h.password),
+          updatedAt: Timestamp.fromDate(new Date(h.updatedAt)),
+        })) || []
+
+      encryptedHistory.push({
+        password: encryptPassword(entry.password),
+        updatedAt: Timestamp.now(),
+      })
+
+      await editPassword(auth.currentUser.uid, passwordId, {
+        site: entry.siteName,
+        username: entry.username,
+        password: encryptPassword(oldPassword),
+        history: encryptedHistory,
+      })
+
+      toast.success("Password rolled back")
+      await loadPasswords()
+    } catch {
+      toast.error("Rollback failed")
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Animated background */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 -left-32 w-96 h-96 bg-primary/5 rounded-full blur-3xl animate-float" />
-        <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-teal-500/5 rounded-full blur-3xl animate-float" style={{ animationDelay: '2s' }} />
-      </div>
-
       <VaultHeader
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -195,9 +273,26 @@ export default function Dashboard() {
         totalPasswords={passwords.length}
       />
 
-      <main className="container mx-auto px-4 py-6 relative z-10">
-        {/* Filter Bar */}
-        {passwords.length > 0 && (
+      <div className="flex justify-end px-6 pt-3">
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={handleSignOut}
+          className="flex items-center gap-2"
+        >
+          <LogOut className="h-4 w-4" />
+          Sign out
+        </Button>
+      </div>
+
+      <main className="container mx-auto px-4 py-6">
+        {loading && (
+          <p className="text-center text-muted-foreground">
+            Loading your vault...
+          </p>
+        )}
+
+        {!loading && passwords.length > 0 && (
           <FilterBar
             websites={uniqueWebsites}
             emails={uniqueEmails}
@@ -205,33 +300,32 @@ export default function Dashboard() {
             selectedEmails={selectedEmails}
             onWebsiteChange={setSelectedWebsites}
             onEmailChange={setSelectedEmails}
-            onClearFilters={handleClearFilters}
+            onClearFilters={() => {
+              setSelectedWebsites([])
+              setSelectedEmails([])
+            }}
           />
         )}
 
-        {passwords.length === 0 ? (
+        {!loading && passwords.length === 0 ? (
           <EmptyState onAddClick={() => setIsModalOpen(true)} />
-        ) : filteredPasswords.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center py-20"
-          >
-            <p className="text-muted-foreground">No passwords match your filters.</p>
-          </motion.div>
         ) : (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
           >
-            <AnimatePresence mode="popLayout">
+            <AnimatePresence>
               {filteredPasswords.map((entry) => (
                 <PasswordCard
                   key={entry.id}
                   entry={entry}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
+                  onEdit={(e) => {
+                    setEditEntry(e)
+                    setIsModalOpen(true)
+                  }}
+                  onDelete={() => setDeleteId(entry.id)}
+                  onRollback={handleRollback}
                 />
               ))}
             </AnimatePresence>
@@ -239,34 +333,32 @@ export default function Dashboard() {
         )}
       </main>
 
-      {/* Add/Edit Modal */}
       <AddPasswordModal
         isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        onSave={handleAddPassword}
+        onClose={() => {
+          setIsModalOpen(false)
+          setEditEntry(null)
+        }}
+        onSave={handleSavePassword}
         editEntry={editEntry}
       />
 
-      {/* Delete Confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent className="glass-card border-white/10">
+        <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-foreground">Delete Password</AlertDialogTitle>
-            <AlertDialogDescription className="text-muted-foreground">
-              Are you sure you want to delete this password? This action cannot be undone.
+            <AlertDialogTitle>Delete Password</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="border-white/10 hover:bg-white/5">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
+  )
 }
