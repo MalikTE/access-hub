@@ -25,9 +25,10 @@ type PasswordFormData = z.infer<typeof passwordSchema>;
 interface AddPasswordModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (entry: Omit<PasswordEntry, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onSave: (data: any) => void;
   editEntry?: PasswordEntry | null;
 }
+
 
 export function AddPasswordModal({ isOpen, onClose, onSave, editEntry }: AddPasswordModalProps) {
   const [showPassword, setShowPassword] = useState(false);
@@ -72,24 +73,24 @@ export function AddPasswordModal({ isOpen, onClose, onSave, editEntry }: AddPass
   );
 
   const onSubmit = (data: PasswordFormData) => {
-    const siteName = selectedSite.id === 'custom' ? customSiteName || 'Custom Site' : selectedSite.name;
-    
-    onSave({
-      siteId: selectedSite.id,
-      siteName,
-      siteIcon: selectedSite.icon,
-      siteColor: selectedSite.color,
-      username: data.username || '',
-      email: data.email || '',
-      password: data.password,
-      customUrl: data.customUrl,
-    });
-    
-    reset();
-    setSelectedSite(getDefaultSite());
-    setCustomSiteName('');
-    onClose();
-  };
+  const siteName =
+    selectedSite.id === "custom"
+      ? customSiteName || "Custom Site"
+      : selectedSite.name
+onSave({
+  siteName,
+  siteUrl: data.customUrl || selectedSite.url || "",
+  username: data.username || "",
+  email: data.email || "",
+  password: data.password,
+});
+
+  reset()
+  setSelectedSite(getDefaultSite())
+  setCustomSiteName("")
+  onClose()
+}
+
 
   const handleSelectSite = (site: SiteInfo) => {
     setSelectedSite(site);
