@@ -10,22 +10,12 @@ import {
   Globe,
   Mail,
   User,
+  ExternalLink,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PasswordEntry } from "@/components/auth/password"
 import { toast } from "sonner"
 import { Timestamp } from "firebase/firestore"
-
-interface PasswordCardProps {
-  entry: PasswordEntry
-  onEdit: (entry: PasswordEntry) => void
-  onDelete: (id: string) => void
-  onRollback: (passwordId: string, oldPassword: string) => void
-}
-
-interface Props {
-  entry: PasswordEntry
-}
 
 /* ================================
    SAFE DATE PARSER
@@ -46,6 +36,24 @@ const toDateSafe = (value: any): Date => {
   }
 
   return new Date()
+}
+
+/* ================================
+   URL NORMALIZER
+================================ */
+const normalizeUrl = (url?: string) => {
+  if (!url) return null
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url
+  }
+  return `https://${url}`
+}
+
+interface PasswordCardProps {
+  entry: PasswordEntry
+  onEdit: (entry: PasswordEntry) => void
+  onDelete: (id: string) => void
+  onRollback: (passwordId: string, oldPassword: string) => void
 }
 
 export function PasswordCard({
@@ -84,6 +92,9 @@ export function PasswordCard({
       })()
     : "Never changed"
 
+  const siteUrl = normalizeUrl(entry.siteUrl)
+  console.log("SITE URL:", entry.siteUrl)
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -92,33 +103,43 @@ export function PasswordCard({
       whileHover={{ scale: 1.02 }}
       className="glass-card p-4 md:p-5 rounded-xl border border-white/10 hover:border-primary/30 transition-all duration-300 group"
     >
-      {/* Header */}
+      {/* ================= HEADER ================= */}
       <div className="flex items-start justify-between mb-4">
         <div className="min-w-0">
-        <h3
-  className="text-lg font-semibold text-primary hover:underline cursor-pointer"
-  onClick={() => {
-    if (entry.siteUrl) {
-      window.open(entry.siteUrl, "_blank", "noopener,noreferrer")
-    }
-  }}
->
-  {entry.siteName}
-</h3>
-
-
-          {entry.customUrl && (
-            <p className="text-xs text-muted-foreground truncate max-w-[220px] flex items-center gap-1">
-              <Globe className="w-3 h-3 shrink-0" />
-              <span className="truncate">
-                {entry.customUrl}
+          {siteUrl ? (
+            <a
+              href={siteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-lg font-semibold text-primary hover:underline"
+              title="Open website"
+            >
+              <Globe className="w-4 h-4 shrink-0 opacity-70" />
+              <span className="truncate max-w-[200px]">
+                {entry.siteName}
               </span>
+              <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-70 transition-opacity" />
+            </a>
+          ) : (
+            <h3 className="text-lg font-semibold text-primary truncate max-w-[200px]">
+              {entry.siteName}
+            </h3>
+          )}
+
+          {siteUrl && (
+            <p className="text-xs text-muted-foreground truncate max-w-[220px] flex items-center gap-1 mt-0.5">
+              <Globe className="w-3 h-3 shrink-0" />
+              <span className="truncate">{siteUrl}</span>
             </p>
           )}
         </div>
 
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button variant="ghost" size="icon" onClick={() => onEdit(entry)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onEdit(entry)}
+          >
             <Edit2 className="h-4 w-4" />
           </Button>
 
@@ -132,7 +153,7 @@ export function PasswordCard({
         </div>
       </div>
 
-      {/* Username */}
+      {/* ================= USERNAME ================= */}
       {entry.username && (
         <div className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2 mb-2">
           <div className="flex items-center gap-2 text-sm text-foreground break-all">
@@ -152,8 +173,8 @@ export function PasswordCard({
         </div>
       )}
 
-      {/* Email */}
-      {entry.email !== undefined  && (
+      {/* ================= EMAIL ================= */}
+      {entry.email && (
         <div className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2 mb-2">
           <div className="flex items-center gap-2 text-sm text-foreground break-all">
             <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -164,7 +185,7 @@ export function PasswordCard({
             variant="ghost"
             size="icon"
             onClick={() =>
-              copyToClipboard(entry.email!, "Email")
+              copyToClipboard(entry.email, "Email")
             }
           >
             <Copy className="h-4 w-4" />
@@ -172,7 +193,7 @@ export function PasswordCard({
         </div>
       )}
 
-      {/* Password */}
+      {/* ================= PASSWORD ================= */}
       <div className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2">
         <div className="flex-1 min-w-0">
           <p className="text-xs text-muted-foreground mb-0.5">
@@ -215,7 +236,9 @@ export function PasswordCard({
                 "Password"
               )
             }
+            
           >
+            
             <Copy className="h-4 w-4" />
           </Button>
 
@@ -233,7 +256,7 @@ export function PasswordCard({
         </div>
       </div>
 
-      {/* History */}
+      {/* ================= HISTORY ================= */}
       {showHistory && entry.history?.length > 0 && (
         <motion.div
           initial={{ opacity: 0, height: 0 }}
