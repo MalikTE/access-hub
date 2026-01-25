@@ -8,7 +8,7 @@ import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./routes/ProtectedRoute";
-import Signup from "@/pages/Signup"
+import Signup from "@/pages/Signup";
 
 const queryClient = new QueryClient();
 
@@ -20,6 +20,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           {/* Public route (Login / Landing) */}
+        
           <Route path="/" element={<Index />} />
           <Route path="/signup" element={<Signup />} />
 
